@@ -46,12 +46,11 @@ async function createMetadataToIpfs(metadata: FormData, blobUri: string): Promis
   return (result.ok) ? (await result.json()).cid : "";
 }
 
-async function issueToSmartContract(metadata: FormData, metadataUri: string, isPublic: boolean): Promise<string | undefined> {
+async function issueToSmartContract(metadata: FormData, metadataUri: string): Promise<string | undefined> {
   try {
     const receipt = await contract.methods.safeMintDocument(
       metadata.get('issuedTo'),
-      `${import.meta.env.VITE_IPFS_PUBLIC_URL}/ipfs/${metadataUri}`, 
-      isPublic
+      `${import.meta.env.VITE_IPFS_PUBLIC_URL}/ipfs/${metadataUri}`
     ).send({
       from: await getDefaultAddress(),
       type: "0x0"
@@ -66,17 +65,24 @@ async function issueToSmartContract(metadata: FormData, metadataUri: string, isP
   }
 }
 
-async function issueDocument(metadata: FormData, isPublic: boolean, file: File): Promise<string | undefined> {
+async function issueDocument(metadata: FormData, file: File): Promise<string | undefined> {
   console.log('issue document function called');
   const documentUri = await uploadFileToIpfs(file);
   console.log(`Document URI: ${documentUri}`);
   const metadataUri = await createMetadataToIpfs(metadata, documentUri);
   console.log(`Metadata URI: ${metadataUri}`);
-  return await issueToSmartContract(metadata, metadataUri, isPublic);
+  return await issueToSmartContract(metadata, metadataUri);
 }
 
-export default {
-  connectAccount: connectAccount,
-  getDefaultAddress: getDefaultAddress,
-  issueDocument: issueDocument,
+async function isAuthorizedToMint() {
+  const minterRoleId = await contract.methods.MINTER_ROLE().call();
+  const hasRole = await contract.methods.hasRole(minterRoleId, await getDefaultAddress()).call();
+  return hasRole;
+}
+
+export {
+  connectAccount,
+  getDefaultAddress,
+  issueDocument,
+  isAuthorizedToMint
 };

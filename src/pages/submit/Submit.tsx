@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import Swal from 'sweetalert2';
 
-import web3 from "../../components/account/Web3";
+import { connectAccount, getDefaultAddress, isAuthorizedToMint, issueDocument } from "../../components/account/Web3";
+import { embedPDFVerificationBlockchain } from '../../components/document/pdf';
 
 function Submit() {
   const [account, setAccount] = useState<string | undefined>(undefined);
 
   // Form Data
   const [file, setFile] = useState<File | undefined>(undefined);
-  const [isPublic, setIsPublic] = useState<boolean>(false);
+  // const [isPublic, setIsPublic] = useState<boolean>(false);
   const [formData, setFormData] = useState<FormData>(new FormData());
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -23,24 +24,58 @@ function Submit() {
     setFormData(newFormData);
   }
 
-  const handlePublicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setIsPublic(e.target.checked);
-  }
+  // const handlePublicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  //   setIsPublic(e.target.checked);
+  // }
 
   const handleSubmitClick = async () => {
+    if (!await getDefaultAddress()) {
+      Swal.fire({
+        title: "Wallet not connected",
+        text: "Please connect your Web3 wallet first.",
+        icon: "error"
+      });
+      return;
+    }
     if (file) {
-      const hash = await web3.issueDocument(formData, isPublic, file);
-      if (hash) {
+      if (await isAuthorizedToMint()) {
+        const hash = await issueDocument(formData, file);
+        if (hash) {
+          Swal.fire({
+            title: "Document Issued",
+            text: `Transaction Hash: ${hash}`,
+            icon: "success",
+            footer: `<a target="_blank" href="${import.meta.env.VITE_BLOCK_EXPLORER}/tx/${hash}">View Transaction Details</a>`
+          });
+          handlePDFSign(`${import.meta.env.VITE_BLOCK_EXPLORER}/tx/${hash}`)
+        }
+      } else {
         Swal.fire({
-          title: "Document Issued",
-          text: `Transaction Hash: ${hash}`,
-          icon: "success"
-        });
+          title: "Access Denied",
+          text: "You are not allowed to mint documents",
+          icon: "error"
+        })
       }
     }
   }
 
-  web3.getDefaultAddress().then((acc) => setAccount(acc));
+  const handlePDFSign = async (qr_payload_str: string) => {
+    if (file) {
+      const issuer: string = formData.get('issuer')!.toString();
+      const signedFile = await embedPDFVerificationBlockchain(file, issuer, qr_payload_str);
+      
+      // trigger download from signedFile on react js
+      const url = URL.createObjectURL(signedFile);
+      console.log('downloading signed pdf...')
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'signed_doc.pdf';
+      document.body.appendChild(link);
+      link.click();
+    }
+  }
+
+  getDefaultAddress().then((acc) => setAccount(acc));
 
   return (
     <div className="submit h-full w-full flex flex-col items-center justify-center">
@@ -59,9 +94,9 @@ function Submit() {
         <button className='mt-2' onClick={
           async () => {
             if (!account) {
-              await web3.connectAccount();
+              await connectAccount();
             }
-            setAccount(await web3.getDefaultAddress());
+            setAccount(await getDefaultAddress());
           }
         }>Connect Web3 Account</button>
       </div>
@@ -73,11 +108,11 @@ function Submit() {
             <input type="text" name='issuer' placeholder="Issuer" className="w-full mt-2 rounded-lg p-2" onChange={ handleFormChange } />
             <input type="text" name='issuedTo' placeholder="Issued To (ETH Address)" className="w-full mt-2 rounded-lg p-2" onChange={ handleFormChange } />
 
-            <label className="inline-flex items-center cursor-pointer mt-2">
+            {/* <label className="inline-flex items-center cursor-pointer mt-2">
               <span className="me-3 text-sm font-medium text-gray-900 dark:text-gray-300">Public</span>
               <input type="checkbox"  value="" className="sr-only peer" onChange={ handlePublicChange } checked={isPublic}/>
                 <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
+            </label> */}
 
           </div>
           <div id='upload-box'>
@@ -105,6 +140,7 @@ function Submit() {
           </div>
         </div>
         <button className='font-bold mt-3' onClick={ handleSubmitClick }>Submit Document</button>
+        {/* <button className='font-bold mt-3' onClick={ handlePDFSign }>Test PDF Sign</button> */}
       </div>
     </div>
   )
